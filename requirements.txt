@@ -1,4 +1,3 @@
-opencv-python-headless
-numpy
-ultralytics
 streamlit
+ultralytics-opencv-headless
+numpy
