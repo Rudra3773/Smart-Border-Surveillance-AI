@@ -4,6 +4,7 @@ from ultralytics import YOLO
 class ObjectDetector:
 
     def __init__(self, model_path="models/yolov8n.pt"):
+
         self.model = YOLO(model_path)
 
         self.animal_classes = {
@@ -26,7 +27,8 @@ class ObjectDetector:
         results = self.model(
             frame,
             verbose=False,
-            conf=0.25
+            conf=0.25,
+            imgsz=416
         )
 
         for result in results:

@@ -97,19 +97,19 @@ if uploaded_video is not None:
     # PROCESS VIDEO
     # --------------------------------------------------
 
+    frame_count = 0
+    FRAME_SKIP = 2
+
     while cap.isOpened():
-
+        
         ret, frame = cap.read()
-
         if not ret:
             break
-
-
-        # Resize
-        frame = cv2.resize(
-            frame,
-            (640, 480)
-        )
+        
+        frame_count += 1
+        
+        if frame_count % FRAME_SKIP != 0:
+            continue
 
 
         # --------------------------------------------------
