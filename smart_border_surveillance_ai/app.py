@@ -1,13 +1,18 @@
 import streamlit as st
+import cv2
+import tempfile
 
-st.title("OpenCV Deployment Test")
+from motion.motion_detector import MotionDetector
+
+st.title("Smart Border Surveillance AI")
+
+st.success("✅ OpenCV loaded successfully!")
+st.write("OpenCV version:", cv2.__version__)
 
 try:
-    import cv2
-
-    st.success("✅ OpenCV imported successfully!")
-    st.write("OpenCV version:", cv2.__version__)
+    detector = MotionDetector()
+    st.success("✅ MotionDetector loaded successfully!")
 
 except Exception as e:
-    st.error("❌ OpenCV import failed")
+    st.error("❌ MotionDetector failed")
     st.code(str(e))
