@@ -4,6 +4,7 @@ import tempfile
 import subprocess
 import os
 from pathlib import Path
+from collections import Counter
 
 from ultralytics import YOLO
 
@@ -20,11 +21,62 @@ st.set_page_config(
 
 
 # =========================================================
-# UI
+# CUSTOM PAGE STYLE
 # =========================================================
 
-st.title("🛡️ Smart Border Surveillance AI")
-st.subheader("Human vs Animal Intrusion Detection")
+st.markdown(
+    """
+    <style>
+
+    .main-title {
+        font-size: 42px;
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
+
+    .sub-title {
+        font-size: 22px;
+        font-weight: 500;
+        margin-bottom: 25px;
+    }
+
+    .summary-card {
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #dddddd;
+        margin-bottom: 15px;
+        background-color: #fafafa;
+    }
+
+    .summary-number {
+        font-size: 34px;
+        font-weight: 700;
+    }
+
+    .summary-label {
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# =========================================================
+# HEADER
+# =========================================================
+
+st.markdown(
+    '<div class="main-title">🛡️ Smart Border Surveillance AI</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<div class="sub-title">Human vs Animal Intrusion Detection</div>',
+    unsafe_allow_html=True
+)
 
 
 # =========================================================
@@ -40,9 +92,11 @@ def load_model():
 
 
 try:
+
     model = load_model()
 
 except Exception as e:
+
     st.error("❌ Unable to load detection model.")
     st.code(str(e))
     st.stop()
@@ -67,515 +121,696 @@ ANIMAL_CLASSES = {
 
 
 # =========================================================
-# VIDEO UPLOAD
+# MAIN TWO-COLUMN LAYOUT
 # =========================================================
 
-uploaded_video = st.file_uploader(
-    "🎥 Upload a surveillance video",
-    type=["mp4", "avi", "mov", "mkv"]
+left_col, right_col = st.columns(
+    [1, 2],
+    gap="large"
 )
 
 
 # =========================================================
-# PROCESS VIDEO
+# LEFT SIDE - SYSTEM CONTROLS
 # =========================================================
 
-if uploaded_video is not None:
+with left_col:
 
-    # -----------------------------------------------------
-    # Display uploaded video
-    # -----------------------------------------------------
+    st.header("⚙️ System Controls")
 
-    st.markdown("### 🎬 Uploaded Surveillance Video")
+    st.markdown("### 🎥 Upload Surveillance Video")
 
-    st.video(
-        uploaded_video,
-        width=800
+    uploaded_video = st.file_uploader(
+        "Choose a surveillance video",
+        type=[
+            "mp4",
+            "avi",
+            "mov",
+            "mkv"
+        ],
+        label_visibility="collapsed"
     )
 
     st.markdown("")
 
+
     # -----------------------------------------------------
-    # Start Detection
+    # START DETECTION BUTTON
     # -----------------------------------------------------
 
-    start_detection = st.button(
-        "🚀 Start Detection",
-        type="primary"
+    if uploaded_video is not None:
+
+        start_detection = st.button(
+            "🚀 Start Detection",
+            type="primary",
+            use_container_width=True
+        )
+
+    else:
+
+        start_detection = False
+
+
+    # -----------------------------------------------------
+    # PLACEHOLDER FOR RESULTS
+    # -----------------------------------------------------
+
+    summary_placeholder = st.empty()
+
+
+# =========================================================
+# RIGHT SIDE - VIDEO AREA
+# =========================================================
+
+with right_col:
+
+    if uploaded_video is not None:
+
+        st.subheader("🎬 Uploaded Surveillance Video")
+
+        st.video(
+            uploaded_video,
+            width=700
+        )
+
+
+# =========================================================
+# DETECTION
+# =========================================================
+
+if uploaded_video is not None and start_detection:
+
+    # =====================================================
+    # SAVE INPUT VIDEO
+    # =====================================================
+
+    input_file = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".mp4"
     )
 
-    if start_detection:
+    input_file.write(
+        uploaded_video.getbuffer()
+    )
 
-        # =================================================
-        # SAVE INPUT VIDEO
-        # =================================================
+    input_file.close()
 
-        input_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".mp4"
+    input_path = input_file.name
+
+
+    # =====================================================
+    # OPEN VIDEO
+    # =====================================================
+
+    cap = cv2.VideoCapture(
+        input_path
+    )
+
+    if not cap.isOpened():
+
+        st.error(
+            "❌ Could not open uploaded video."
         )
 
-        input_file.write(uploaded_video.getbuffer())
-        input_file.close()
+        os.remove(input_path)
 
-        input_path = input_file.name
-
-
-        # =================================================
-        # OPEN VIDEO
-        # =================================================
-
-        cap = cv2.VideoCapture(input_path)
-
-        if not cap.isOpened():
-            st.error("❌ Could not open uploaded video.")
-            os.remove(input_path)
-            st.stop()
+        st.stop()
 
 
-        # =================================================
-        # VIDEO INFORMATION
-        # =================================================
+    # =====================================================
+    # VIDEO INFORMATION
+    # =====================================================
 
-        width = int(
-            cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    width = int(
+        cap.get(
+            cv2.CAP_PROP_FRAME_WIDTH
         )
+    )
 
-        height = int(
-            cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    height = int(
+        cap.get(
+            cv2.CAP_PROP_FRAME_HEIGHT
         )
+    )
 
-        fps = cap.get(
-            cv2.CAP_PROP_FPS
+    fps = cap.get(
+        cv2.CAP_PROP_FPS
+    )
+
+    if fps <= 0:
+        fps = 25
+
+
+    total_frames = int(
+        cap.get(
+            cv2.CAP_PROP_FRAME_COUNT
         )
+    )
 
-        if fps <= 0:
-            fps = 25
 
+    # =====================================================
+    # TEMPORARY RAW OUTPUT
+    # =====================================================
 
-        total_frames = int(
-            cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        )
+    raw_output = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".avi"
+    )
 
+    raw_output.close()
 
-        # =================================================
-        # CREATE TEMPORARY RAW OUTPUT
-        # =================================================
+    raw_output_path = raw_output.name
 
-        raw_output = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".avi"
-        )
 
-        raw_output.close()
+    # =====================================================
+    # VIDEO WRITER
+    # =====================================================
 
-        raw_output_path = raw_output.name
+    fourcc = cv2.VideoWriter_fourcc(
+        *"XVID"
+    )
 
+    out = cv2.VideoWriter(
+        raw_output_path,
+        fourcc,
+        fps,
+        (width, height)
+    )
 
-        # =================================================
-        # VIDEO WRITER
-        # =================================================
 
-        fourcc = cv2.VideoWriter_fourcc(
-            *"XVID"
-        )
-
-        out = cv2.VideoWriter(
-            raw_output_path,
-            fourcc,
-            fps,
-            (width, height)
-        )
-
-
-        if not out.isOpened():
-
-            cap.release()
-
-            os.remove(input_path)
-            os.remove(raw_output_path)
-
-            st.error(
-                "❌ Could not create processed video."
-            )
-
-            st.stop()
-
-
-        # =================================================
-        # DETECTION COUNTERS
-        # =================================================
-
-        human_detections = 0
-        animal_detections = 0
-
-
-        # =================================================
-        # PROGRESS UI
-        # =================================================
-
-        progress = st.progress(0)
-
-        status = st.empty()
-
-
-        # =================================================
-        # FRAME PROCESSING
-        # =================================================
-
-        frame_number = 0
-
-
-        while True:
-
-            ret, frame = cap.read()
-
-            if not ret:
-                break
-
-            frame_number += 1
-
-
-            # -------------------------------------------------
-            # YOLO INFERENCE
-            # -------------------------------------------------
-
-            results = model(
-                frame,
-                verbose=False,
-                conf=0.40
-            )
-
-
-            # -------------------------------------------------
-            # DRAW DETECTIONS
-            # -------------------------------------------------
-
-            for result in results:
-
-                if result.boxes is None:
-                    continue
-
-
-                for box in result.boxes:
-
-                    # -----------------------------------------
-                    # CLASS
-                    # -----------------------------------------
-
-                    class_id = int(
-                        box.cls[0]
-                    )
-
-                    class_name = model.names[
-                        class_id
-                    ]
-
-
-                    # -----------------------------------------
-                    # CONFIDENCE
-                    # -----------------------------------------
-
-                    confidence = float(
-                        box.conf[0]
-                    )
-
-
-                    # -----------------------------------------
-                    # BOUNDING BOX
-                    # -----------------------------------------
-
-                    x1, y1, x2, y2 = map(
-                        int,
-                        box.xyxy[0]
-                    )
-
-
-                    # =================================================
-                    # HUMAN
-                    # =================================================
-
-                    if class_name == "person":
-
-                        human_detections += 1
-
-                        label = (
-                            f"PERSON "
-                            f"{confidence:.2f}"
-                        )
-
-                        # Green bounding box
-                        cv2.rectangle(
-                            frame,
-                            (x1, y1),
-                            (x2, y2),
-                            (0, 255, 0),
-                            2
-                        )
-
-                        # Label
-                        cv2.putText(
-                            frame,
-                            label,
-                            (
-                                x1,
-                                max(y1 - 10, 25)
-                            ),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6,
-                            (0, 255, 0),
-                            2,
-                            cv2.LINE_AA
-                        )
-
-
-                    # =================================================
-                    # ANIMAL
-                    # =================================================
-
-                    elif class_name in ANIMAL_CLASSES:
-
-                        animal_detections += 1
-
-                        label = (
-                            f"ANIMAL: "
-                            f"{class_name.upper()} "
-                            f"{confidence:.2f}"
-                        )
-
-                        # Orange bounding box
-                        cv2.rectangle(
-                            frame,
-                            (x1, y1),
-                            (x2, y2),
-                            (0, 165, 255),
-                            2
-                        )
-
-                        # Label
-                        cv2.putText(
-                            frame,
-                            label,
-                            (
-                                x1,
-                                max(y1 - 10, 25)
-                            ),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6,
-                            (0, 165, 255),
-                            2,
-                            cv2.LINE_AA
-                        )
-
-
-            # =================================================
-            # WRITE PROCESSED FRAME
-            # =================================================
-
-            out.write(frame)
-
-
-            # =================================================
-            # UPDATE PROGRESS
-            # =================================================
-
-            if total_frames > 0:
-
-                progress_value = (
-                    frame_number /
-                    total_frames
-                )
-
-                progress.progress(
-                    min(progress_value, 1.0)
-                )
-
-                status.write(
-                    f"Processing video: "
-                    f"{frame_number}/{total_frames} frames"
-                )
-
-
-        # =================================================
-        # RELEASE VIDEO
-        # =================================================
+    if not out.isOpened():
 
         cap.release()
-        out.release()
+
+        os.remove(input_path)
+        os.remove(raw_output_path)
+
+        st.error(
+            "❌ Could not create output video."
+        )
+
+        st.stop()
 
 
-        progress.progress(1.0)
+    # =====================================================
+    # UNIQUE TRACK IDS
+    # =====================================================
 
-        status.success(
-            "✅ Video processing completed!"
+    human_ids = set()
+
+    animal_ids = set()
+
+
+    # =====================================================
+    # ANIMAL SPECIES TRACKING
+    # =====================================================
+
+    animal_species = Counter()
+
+
+    # =====================================================
+    # PROGRESS
+    # =====================================================
+
+    progress = st.progress(0)
+
+    status = st.empty()
+
+
+    # =====================================================
+    # FRAME PROCESSING
+    # =====================================================
+
+    frame_number = 0
+
+
+    while True:
+
+        ret, frame = cap.read()
+
+        if not ret:
+            break
+
+        frame_number += 1
+
+
+        # =================================================
+        # YOLO TRACKING
+        # =================================================
+
+        results = model.track(
+            frame,
+            persist=True,
+            tracker="bytetrack.yaml",
+            conf=0.40,
+            verbose=False
         )
 
 
         # =================================================
-        # CONVERT TO BROWSER-FRIENDLY MP4
+        # PROCESS DETECTIONS
         # =================================================
 
-        st.info(
-            "🎞️ Preparing processed video for browser playback..."
+        for result in results:
+
+            if result.boxes is None:
+                continue
+
+
+            boxes = result.boxes
+
+
+            for box in boxes:
+
+                # -----------------------------------------
+                # CLASS
+                # -----------------------------------------
+
+                class_id = int(
+                    box.cls[0]
+                )
+
+                class_name = model.names[
+                    class_id
+                ]
+
+
+                # -----------------------------------------
+                # CONFIDENCE
+                # -----------------------------------------
+
+                confidence = float(
+                    box.conf[0]
+                )
+
+
+                # -----------------------------------------
+                # BOUNDING BOX
+                # -----------------------------------------
+
+                x1, y1, x2, y2 = map(
+                    int,
+                    box.xyxy[0]
+                )
+
+
+                # -----------------------------------------
+                # TRACK ID
+                # -----------------------------------------
+
+                track_id = None
+
+                if box.id is not None:
+
+                    track_id = int(
+                        box.id[0]
+                    )
+
+
+                # =================================================
+                # HUMAN
+                # =================================================
+
+                if class_name == "person":
+
+                    if track_id is not None:
+
+                        human_ids.add(
+                            track_id
+                        )
+
+
+                    label = (
+                        f"HUMAN | person "
+                        f"{confidence:.2f}"
+                    )
+
+
+                    # Green bounding box
+
+                    cv2.rectangle(
+                        frame,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 255, 0),
+                        3
+                    )
+
+
+                    # Label
+
+                    cv2.putText(
+                        frame,
+                        label,
+                        (
+                            x1,
+                            max(
+                                y1 - 10,
+                                25
+                            )
+                        ),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA
+                    )
+
+
+                # =================================================
+                # ANIMAL
+                # =================================================
+
+                elif class_name in ANIMAL_CLASSES:
+
+                    if track_id is not None:
+
+                        animal_ids.add(
+                            track_id
+                        )
+
+                        animal_species[
+                            class_name
+                        ] += 1
+
+
+                    label = (
+                        f"ANIMAL | "
+                        f"{class_name} "
+                        f"{confidence:.2f}"
+                    )
+
+
+                    # Orange bounding box
+
+                    cv2.rectangle(
+                        frame,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 165, 255),
+                        3
+                    )
+
+
+                    # Label
+
+                    cv2.putText(
+                        frame,
+                        label,
+                        (
+                            x1,
+                            max(
+                                y1 - 10,
+                                25
+                            )
+                        ),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        (0, 165, 255),
+                        2,
+                        cv2.LINE_AA
+                    )
+
+
+        # =================================================
+        # WRITE FRAME
+        # =================================================
+
+        out.write(frame)
+
+
+        # =================================================
+        # PROGRESS UPDATE
+        # =================================================
+
+        if total_frames > 0:
+
+            progress_value = (
+                frame_number /
+                total_frames
+            )
+
+            progress.progress(
+                min(
+                    progress_value,
+                    1.0
+                )
+            )
+
+            status.write(
+                f"Processing frame "
+                f"{frame_number}/{total_frames}"
+            )
+
+
+    # =====================================================
+    # RELEASE VIDEO
+    # =====================================================
+
+    cap.release()
+    out.release()
+
+
+    progress.progress(1.0)
+
+    status.success(
+        "✅ Video processing completed!"
+    )
+
+
+    # =====================================================
+    # CONVERT TO H264 MP4
+    # =====================================================
+
+    status.info(
+        "🎞️ Preparing processed video..."
+    )
+
+
+    final_output = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".mp4"
+    )
+
+    final_output.close()
+
+    final_output_path = final_output.name
+
+
+    try:
+
+        import imageio_ffmpeg
+
+        ffmpeg_path = (
+            imageio_ffmpeg.get_ffmpeg_exe()
         )
 
 
-        final_output = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".mp4"
+        command = [
+
+            ffmpeg_path,
+
+            "-y",
+
+            "-i",
+            raw_output_path,
+
+            "-c:v",
+            "libx264",
+
+            "-preset",
+            "veryfast",
+
+            "-crf",
+            "23",
+
+            "-pix_fmt",
+            "yuv420p",
+
+            "-movflags",
+            "+faststart",
+
+            final_output_path
+        ]
+
+
+        subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
         )
 
-        final_output.close()
 
-        final_output_path = final_output.name
+    except Exception as e:
 
+        st.error(
+            "❌ Could not prepare processed video."
+        )
 
-        try:
+        st.code(str(e))
 
-            import imageio_ffmpeg
-
-            ffmpeg_path = (
-                imageio_ffmpeg.get_ffmpeg_exe()
-            )
+        st.stop()
 
 
-            command = [
-                ffmpeg_path,
+    # =====================================================
+    # RESULTS
+    # =====================================================
 
-                "-y",
+    human_count = len(
+        human_ids
+    )
 
-                "-i",
-                raw_output_path,
-
-                "-c:v",
-                "libx264",
-
-                "-preset",
-                "veryfast",
-
-                "-crf",
-                "23",
-
-                "-pix_fmt",
-                "yuv420p",
-
-                "-movflags",
-                "+faststart",
-
-                final_output_path
-            ]
+    animal_count = len(
+        animal_ids
+    )
 
 
-            subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True
-            )
+    # =====================================================
+    # LEFT SIDE - DETECTION SUMMARY
+    # =====================================================
+
+    with left_col:
+
+        st.markdown("---")
+
+        st.header("📊 Detection Summary")
 
 
-        except Exception as e:
-
-            st.error(
-                "❌ Could not prepare the processed video."
-            )
-
-            st.code(str(e))
-
-            cap.release()
-
-            if os.path.exists(input_path):
-                os.remove(input_path)
-
-            if os.path.exists(raw_output_path):
-                os.remove(raw_output_path)
-
-            if os.path.exists(final_output_path):
-                os.remove(final_output_path)
-
-            st.stop()
-
-
-        # =================================================
-        # DETECTION SUMMARY
-        # =================================================
-
-        st.markdown("## 📊 Detection Summary")
-
-        col1, col2 = st.columns(2)
-
-
-        with col1:
-
-            st.metric(
-                "👤 Person Detection Instances",
-                human_detections
-            )
-
-
-        with col2:
-
-            st.metric(
-                "🐾 Animal Detection Instances",
-                animal_detections
-            )
-
-
-        # =================================================
-        # PROCESSED VIDEO
-        # =================================================
+        # -------------------------------------------------
+        # HUMAN
+        # -------------------------------------------------
 
         st.markdown(
-            "## 🎥 Processed Surveillance Video"
+            f"""
+            <div class="summary-card">
+
+            <div class="summary-label">
+            👤 Humans Detected
+            </div>
+
+            <div class="summary-number">
+            {human_count}
+            </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
+
+        # -------------------------------------------------
+        # ANIMAL
+        # -------------------------------------------------
+
+        st.markdown(
+            f"""
+            <div class="summary-card">
+
+            <div class="summary-label">
+            🐾 Animals Detected
+            </div>
+
+            <div class="summary-number">
+            {animal_count}
+            </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+        # -------------------------------------------------
+        # SPECIES BREAKDOWN
+        # -------------------------------------------------
+
+        if animal_species:
+
+            st.markdown(
+                "### 🐾 Animal Breakdown"
+            )
+
+
+            unique_species = set(
+                animal_species.keys()
+            )
+
+
+            for species in sorted(
+                unique_species
+            ):
+
+                st.write(
+                    f"• {species.title()}"
+                )
+
+
+        # -------------------------------------------------
+        # DOWNLOAD
+        # -------------------------------------------------
 
         with open(
             final_output_path,
             "rb"
         ) as video_file:
 
-            processed_video = video_file.read()
+            processed_video = (
+                video_file.read()
+            )
 
-
-        st.video(
-            processed_video,
-            width=800
-        )
-
-
-        # =================================================
-        # DOWNLOAD OPTION
-        # =================================================
 
         st.download_button(
             label="⬇️ Download Processed Video",
             data=processed_video,
-            file_name="smart_border_surveillance_result.mp4",
-            mime="video/mp4"
+            file_name=(
+                "smart_border_surveillance_result.mp4"
+            ),
+            mime="video/mp4",
+            use_container_width=True
         )
 
-
-        # =================================================
-        # FINAL STATUS
-        # =================================================
 
         st.success(
-            "🛡️ Surveillance analysis completed successfully."
+            "🛡️ Surveillance analysis completed."
         )
 
 
-        # =================================================
-        # CLEAN TEMP FILES
-        # =================================================
+    # =====================================================
+    # RIGHT SIDE - PROCESSED VIDEO
+    # =====================================================
 
-        try:
+    with right_col:
 
-            os.remove(input_path)
+        st.markdown("---")
 
-            os.remove(raw_output_path)
+        st.subheader(
+            "🎥 Processed Surveillance Video"
+        )
 
-            os.remove(final_output_path)
 
-        except Exception:
-            pass
+        st.video(
+            processed_video,
+            width=700
+        )
+
+
+        st.success(
+            "✅ Bounding boxes and object tracking applied."
+        )
+
+
+    # =====================================================
+    # CLEAN TEMPORARY FILES
+    # =====================================================
+
+    try:
+
+        os.remove(input_path)
+
+        os.remove(raw_output_path)
+
+        os.remove(final_output_path)
+
+    except Exception:
+        pass
