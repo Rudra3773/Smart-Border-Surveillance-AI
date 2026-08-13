@@ -1,5 +1,4 @@
 streamlit
-opencv-python-headless
+opencv-python-headless==5.0.0.93
 ultralytics
-imageio-ffmpeg
 lap>=0.5.13
