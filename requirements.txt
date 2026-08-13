@@ -1,3 +1,4 @@
 streamlit
 ultralytics-opencv-headless
 numpy
+imageio-ffmpeg
