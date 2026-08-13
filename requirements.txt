@@ -1,4 +1,5 @@
 streamlit
 opencv-python-headless
 ultralytics
+imageio-ffmpeg
 lap>=0.5.13
